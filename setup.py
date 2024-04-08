@@ -1,28 +1,29 @@
 import os, subprocess
 from setuptools import setup, find_packages
 
+currdir = os.path.dirname(__file__)
+
 def get_version():
-    try:
-        # Get the version from the git tag
-        tag = subprocess.check_output(["git", "describe", "--tags", "--abbrev=0"]).decode("utf-8").strip()
-        # Remove the "v" prefix if present
-        version = tag[1:] if tag.startswith("v") else tag
-        return version
-    except subprocess.CalledProcessError:
-        # If there is no git tag, fallback to a default version
-        return "0.0.0"
+    # try:
+    # Get the version from the git tag
+    tag = subprocess.check_output(["git", "describe", "--tags", "--abbrev=0"]).decode("utf-8").strip()
+    # Remove the "v" prefix if present
+    version = tag[1:] if tag.startswith("v") else tag
+    return version
+    # except subprocess.CalledProcessError:
+    #     # If there is no git tag, fallback to a default version
+    #     return "0.0.0"
 
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
-def read_requirements(file_path):
-    requirements_path = os.path.join(os.path.dirname(__file__), file_path)
-    try:
-        with open(requirements_path, 'r') as file:
-            return file.read().splitlines()
-    except FileNotFoundError:
-        print(f'Could not read {requirements_path}')
+def read_requirements():
+    requirements_path = os.path.join(currdir, 'requirements.txt')
+    if not os.path.exists(requirements_path):
+        print(f'Could not find {requirements_path}')
         return ['textual<0.50']
+    with open(requirements_path, 'r') as file:
+            return file.read().splitlines()
 
 setup(
     name="slurm-gui",
@@ -40,6 +41,6 @@ setup(
         "Operating System :: OS Independent",
     ],
     python_requires='>=3.8',
-    install_requires=read_requirements('requirements.txt'),
+    install_requires=read_requirements(),
     scripts=['bin/tsqueue'],
 )
