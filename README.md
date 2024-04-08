@@ -1,4 +1,5 @@
-# slurm-gui, get easier access to slurm 
+# slurm-gui, Slurm made easy ! 
+
 **GUI/TUI frontends to squeue, sbatch and srun using the fabulous textual TUI framework**
 
 Simply run `tsqueue` on a node where slurm is installed to get a list of slurm jobs (tsbatch and tsrun are coming...)
