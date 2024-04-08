@@ -22,10 +22,9 @@ def read_requirements():
     requirements_path = os.path.join(currdir, 'requirements.txt')
     if not os.path.exists(requirements_path):
         print(f'Could not find {requirements_path}')
-        return ['textual<0.50']
+        return ['textual<0.60']
     with open(requirements_path, 'r', encoding="utf-8") as file:
         return file.read().splitlines()
-
 
 setup(
     name="slurm-gui",
