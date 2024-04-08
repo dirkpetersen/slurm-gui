@@ -12,7 +12,7 @@ if sys.version_info < (3, 8):
     print("Error: This script requires Python 3.8 or higher.")
     print(f"You are using Python {sys.version}")
     sys.exit(1)
-from typing import List, Dict
+from typing import List, Dict, Tuple
 from textual import events
 from textual.app import App, ComposeResult
 from textual.widgets import DataTable, Button, Header, Footer, Label, ProgressBar, Static, Rule
@@ -44,7 +44,7 @@ class TSQueue(App):
         self.data_table.add_columns(*columns)
         self.data_table.add_rows(data)
 
-    def get_squeue_data(self) -> tuple[List[str], List[List[str]]]:
+    def get_squeue_data(self) -> Tuple[List[str], List[List[str]]]:
         squeue_format = os.getenv('SQUEUE_FORMAT', '%.18i %.4P %.12j %.8u %.2t %.10M %.10L %.3D %.3C %.9b %.4m %R')
         cmd = f'squeue --format="{squeue_format}"'
         output = sp.check_output(cmd, shell=True, text=True)
