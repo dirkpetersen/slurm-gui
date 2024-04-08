@@ -28,9 +28,9 @@ def read_requirements():
         if "requirements.txt" in files:
             file_path = os.path.join(root, "requirements.txt")
         elif "requires.txt" in files:
-            file_path = os.path.join(root, "requires.txt")
-        print('requirements.txt:', file_path)
+            file_path = os.path.join(root, "requires.txt")        
         if file_path:
+            print('requirements.txt:', file_path)
             with open(file_path, 'r') as file:
                 return file.read().splitlines()
     return []
