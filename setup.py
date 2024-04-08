@@ -4,15 +4,16 @@ from setuptools import setup, find_packages
 currdir = os.path.dirname(__file__)
 
 def get_version():
-    # try:
-    # Get the version from the git tag
-    tag = subprocess.check_output(["git", "describe", "--tags", "--abbrev=0"]).decode("utf-8").strip()
-    # Remove the "v" prefix if present
-    version = tag[1:] if tag.startswith("v") else tag
-    return version
-    # except subprocess.CalledProcessError:
-    #     # If there is no git tag, fallback to a default version
-    #     return "0.0.0"
+    github_ref = os.getenv("GITHUB_REF")
+    if github_ref and github_ref.startswith("refs/tags/"):
+        # Extract the tag name from the reference
+        tag = github_ref.split("/")[-1]
+        # Remove the "v" prefix if present
+        version = tag[1:] if tag.startswith("v") else tag
+        return version
+    else:
+        # If there is no tag reference, fallback to a default version
+        return "0.0.0"
 
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
@@ -22,8 +23,9 @@ def read_requirements():
     if not os.path.exists(requirements_path):
         print(f'Could not find {requirements_path}')
         return ['textual<0.50']
-    with open(requirements_path, 'r') as file:
-            return file.read().splitlines()
+    with open(requirements_path, 'r', encoding="utf-8") as file:
+        return file.read().splitlines()
+
 
 setup(
     name="slurm-gui",
