@@ -1,7 +1,10 @@
-import os, subprocess
-from setuptools import setup, find_packages
+import os, setuptools
 
-currdir = os.path.dirname(__file__)
+pkgname = 'slurm-gui'
+appdesc = "GUI/TUI frontends to squeue, sbatch and srun using the fabulous textual TUI framework"
+gitrepos = 'dirkpetersen/slurm-gui'
+pyreq = '>=3.8'
+myscripts = ['bin/tsqueue']
 
 def get_version():
     github_ref = os.getenv("GITHUB_REF")
@@ -20,29 +23,30 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 def read_requirements():
     print('os.listdir():', os.listdir())
-    requirements_path = os.path.join(currdir, 'requirements.txt')
-    if not os.path.exists(requirements_path):
-        print(f'Could not find {requirements_path}')
-        return ['textual']
-    with open(requirements_path, 'r', encoding="utf-8") as file:
-        return file.read().splitlines()
+    for root, dirs, files in os.walk("."):
+        if "requires.txt" in files:
+            file_path = os.path.join(root, "requires.txt")
+            print('requirements.txt:', file_path)
+            with open(file_path, 'r') as file:
+                return file.read().splitlines()
+    return ['textual']
 
-setup(
-    name="slurm-gui",
+setuptools.setup(
+    name=pkgname,
     version=get_version(),
     author="Dirk Petersen",
     author_email="no-email@no-domain.com",
-    description="GUI/TUI frontends to squeue, sbatch and srun using the fabulous textual TUI framework",
+    description=appdesc,
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/dirkpetersen/slurm-gui",
-    packages=find_packages(),
+    url=f"https://github.com/{gitrepos}",
+    packages=setuptools.find_packages(),
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
-    python_requires='>=3.8',
+    python_requires=pyreq,
     install_requires=read_requirements(),
-    scripts=['bin/tsqueue'],
+    scripts=myscripts,
 )
