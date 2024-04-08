@@ -19,10 +19,11 @@ with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 def read_requirements():
+    print('os.listdir():', os.listdir())
     requirements_path = os.path.join(currdir, 'requirements.txt')
     if not os.path.exists(requirements_path):
         print(f'Could not find {requirements_path}')
-        return ['textual<0.60']
+        return ['textual']
     with open(requirements_path, 'r', encoding="utf-8") as file:
         return file.read().splitlines()
 
