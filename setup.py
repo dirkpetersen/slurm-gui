@@ -24,7 +24,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 def read_requirements():
     print('os.listdir():', os.listdir())
     for root, dirs, files in os.walk("."):
-        filepath = ''
+        file_path = ''
         if "requirements.txt" in files:
             file_path = os.path.join(root, "requirements.txt")
         elif "requires.txt" in files:
