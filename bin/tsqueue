@@ -1,0 +1,252 @@
+#!/usr/bin/env python3
+
+# puts a terminal interface on slurm squeue
+# to debug install package: textual-dev and run a console in a separate shell:
+# > textual console -x SYSTEM -x EVENT -x DEBUG -x INFO
+# Then launch tsqueue in dev mode
+# > textual run --dev ~/gh/slurm-gui/bin/tsqueue
+# This will show all print statements in the console
+
+import os, re, subprocess as sp, asyncio
+from typing import List, Dict
+from textual import events
+from textual.app import App, ComposeResult
+from textual.widgets import DataTable, Button, Header, Footer, Label, ProgressBar, Static, Rule
+from textual.binding import Binding
+from textual.containers import Vertical, Horizontal
+from textual.screen import ModalScreen
+
+class TSQueue(App):
+    BINDINGS = [
+        ("q", "request_quit", "Quit"),
+    ]
+
+    def compose(self) -> ComposeResult:
+        table = DataTable()
+        table.focus()
+        table.zebra_stripes = True
+        table.cursor_type = "row"
+        table.styles.max_height = "99vh"
+        yield table
+
+    def on_mount(self) -> None:
+        self.data_table = self.query_one(DataTable)
+        self.update_data()
+
+    def update_data(self) -> None:
+        columns, data = self.get_squeue_data()
+        #print('*** columns:', columns)
+        #print('*** data:', data)
+        self.data_table.add_columns(*columns)
+        self.data_table.add_rows(data)
+
+    def get_squeue_data(self) -> tuple[List[str], List[List[str]]]:
+        squeue_format = os.getenv('SQUEUE_FORMAT', '%.18i %.4P %.12j %.8u %.2t %.10M %.10L %.3D %.3C %.9b %.4m %R')
+        cmd = f'squeue --format="{squeue_format}"'
+        output = sp.check_output(cmd, shell=True, text=True)
+        lines = output.strip().split('\n')
+        columns = re.split(r'\s+', lines[0].strip())
+        data = [re.split(r'\s+', line.strip()) for line in lines[1:]]
+        return columns, data
+    
+    async def get_job_details(self, job_id: str) -> Dict[str, List[str]]:
+
+        user = os.getlogin()  # Get the current username
+        if '[' in job_id:
+            job_id = job_id.split('_')[0]        
+        details = {}
+
+        # Use squeue  first
+        cmd = f'squeue -j {job_id} --format=%all'
+        process = await asyncio.create_subprocess_shell(cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        stdout, stderr = await process.communicate()
+
+        lines = stdout.decode().strip().split('\n')
+        keys = lines[0].split('|')
+        values = [line.split('|') for line in lines[1:2]]
+        for i, key in enumerate(keys):
+            details[key] = [value[i] for value in values]             
+        sorted_details = dict(sorted(details.items()))       
+
+        # then add sstat output
+        cmd = f'sstat -j {job_id} -a -P'
+        process = await asyncio.create_subprocess_shell(cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        stdout, stderr = await process.communicate()
+
+        # Check if sstat indicated an error (assuming it would mention 'Invalid user id or unknown job id')
+        if any(s in stderr.decode() for s in ["Invalid user id", "couldn't get steps for job"]):
+            # Fallback to sacct since it likely wasn't your job
+            cmd = f'sacct -j {job_id} -l -P -X'            
+            process = await asyncio.create_subprocess_shell(cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            stdout, stderr = await process.communicate()
+
+        lines = stdout.decode().strip().split('\n')
+        keys = lines[0].split('|')
+        values = [line.split('|') for line in lines[1:2]]
+        for i, key in enumerate(keys):
+            sorted_details[key] = [value[i] for value in values]
+        
+        #print("Job Details:")
+        # print(sorted_details)
+        return sorted_details
+
+    async def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        job_id = self.data_table.get_row(event.row_key)[0]
+        details = await self.get_job_details(job_id)
+        screen = JobDetailsScreen(job_id, details)
+        await self.push_screen(screen)
+
+    def action_request_quit(self) -> None:
+        self.app.exit()
+
+class JobDetailsScreen(ModalScreen):
+    BINDINGS = [
+        ("q", "request_quit", "Quit"),
+    ]    
+    DEFAULT_CSS = """
+    JobDetailsScreen {
+        align: center middle;
+    }
+    JobDetailsScreen > Vertical {
+        width: 90%;
+        height: 90%;        
+        padding: 1 1;
+    }
+    JobDetailsScreen > Vertical > * {        
+        height: auto; 
+    }
+    JobDetailsScreen > Vertical > Horizontal {
+        align: left top;
+        padding-bottom: 1;
+    }
+    JobDetailsScreen > Vertical > Horizontal > Label {
+        width: 80%;
+        padding: 1;
+        overflow: auto;
+    }    
+    """
+
+    def __init__(self, job_id: str, details: Dict[str, List[str]]):
+        super().__init__()
+        self.job_id = job_id
+        if '[' in job_id:
+            self.job_id = job_id.split('_')[0]
+        self.details = details
+
+    def compose(self) -> ComposeResult:
+        reasons = self.details.get('REASON', [])
+        job_states = self.details.get('STATE', [])
+        reason = 'None'
+        job_state = 'Unknown'
+        if len(reasons) > 0:
+            reason = reasons[0]
+        if len(job_states) > 0:
+            job_state = job_states[0]
+
+        with Vertical():
+            # Scrollable DataTable for details
+            with Horizontal():
+                yield Button("(q)uit", id="close", variant="primary")
+
+                if job_state.lower() == 'running':
+                    yield Button("Cancel Job", id="cancel_job", variant="error")
+
+                self.status_label = Label(f"  Details for job {self.job_id}", id="title")
+                if reason != 'None':
+                    self.status_label.update(f"Job {self.job_id} is pending, reason: {self.explain_reason_code(reason)}")
+                yield self.status_label
+               
+            details_table = DataTable()
+            details_table.focus()
+            details_table.zebra_stripes = True
+            details_table.cursor_type = "none"
+            details_table.styles.max_height = "99vh"
+            details_table.add_column("Setting", width=20)
+            details_table.add_column("Value")
+            for key, values in self.details.items():
+                for value in values:
+                    if value not in [None, '', 'Unknown', '(null)', 'N/A', '*', 'None', '0', '00:00:00']:
+                        details_table.add_row(key, value)
+            yield details_table
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "close":
+            self.dismiss()
+        elif event.button.id == "cancel_job":
+            asyncio.create_task(self.cancel_job())
+
+    async def cancel_job(self) -> None:
+        cmd = f'scancel {self.job_id}'
+        process = await asyncio.create_subprocess_shell(cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        stdout, stderr = await process.communicate()
+
+        if process.returncode == 0:
+            self.dismiss()
+        else:
+            error_message = stderr.decode().strip()
+            # Display an error message or handle the cancellation failure appropriately
+            self.status_label.update(f"Failed to cancel job {self.job_id}: {error_message}")
+            print(f"Failed to cancel job {self.job_id}: {error_message}")    
+
+    def action_request_quit(self) -> None:
+        self.dismiss()
+
+    def explain_reason_code(self, reason_code: str) -> str:
+        reason_explanations = {
+            'Resources': 'The resources for the job are not yet available. This could be due to other jobs running on the system or resource limits being reached. The job will start once the required resources become available. If this is a job array, some of your array jobs may already be running. You can check the job status using the squeue command or job management interface.',
+            'DependencyNeverSatisfied': 'The job you submitted has dependencies that were never satisfied. This means that the job was waiting for other jobs to complete before it could start, but those jobs did not finish successfully. To resolve this, review the dependencies of your job and ensure that the dependent jobs are able to complete successfully. You may need to resubmit the dependent jobs or adjust their requirements.',
+            'PartitionTimeLimit': 'The job exceeded the time limit set for the partition it was submitted to. Each partition has a maximum time limit, and if your job runs longer than this limit, it will be terminated. To resolve this, you can either request a partition with a longer time limit or adjust your job to complete within the given time limit. If you need more time, consider breaking your job into smaller tasks or optimizing your code.',
+            'TimeLimit': 'The job exceeded the time limit specified in your job submission. You can set a time limit for your job using the --time option when submitting the job. If your job exceeds this limit, it will be terminated. To resolve this, you can either increase the time limit for your job or optimize your code to complete within the specified time limit.',            
+            'NodeFail': 'The job was terminated because one or more of the nodes assigned to it failed during the execution. This could be due to hardware issues, network problems, or other system failures. If you encounter this issue, it is recommended to report it to the system administrator for further investigation. In the meantime, you can try resubmitting your job to see if it runs successfully on different nodes.',            
+            'Cancelled': 'The job was cancelled explicitly either by the user who submitted the job or by the system administrator. This could be done using the scancel command or through the job management interface. If you cancelled the job yourself, you can resubmit it when you are ready. If the job was cancelled by the system administrator, you may want to reach out to them to understand the reason and see if any actions are needed from your side.',        
+            'RaisedFailure': 'The job was cancelled because one of the job steps returned a non-zero exit code, indicating an error or failure. This means that the job started executing but encountered an issue during one of its steps, causing it to fail. To resolve this, review the error messages in the job output and logs to identify the specific step and error that caused the failure. You may need to fix any bugs, adjust input parameters, or handle error conditions appropriately in your job script.',
+            'JobArrayTaskLimit': 'You exceeded the maximum number of tasks permitted for a job array. Job arrays allow you to submit multiple tasks as a single job, but there is a limit on the number of tasks you can submit. If you reach this limit, the job will be terminated. To resolve this, you can either reduce the number of tasks in your job array or split the tasks into multiple job arrays. You can also consider using other job submission methods or tools that support larger job arrays.',
+            'AssocMaxJobsLimit': 'The job exceeded the maximum number of jobs permitted for an association. Associations allow you to group jobs together and set limits on the number of jobs that can be submitted. If you exceed this limit, the job will be terminated. To resolve this, you can either reduce the number of jobs in the association or request a higher limit from the system administrator. You can also consider submitting jobs without associating them if the association limits are restrictive.',
+            'AssocMaxCpuMinutesPerJobLimit': 'The job exceeded the maximum CPU time limit per job for an association. Associations allow you to set limits on the CPU time that jobs can use. If your job exceeds this limit, it will be terminated. To resolve this, you can either optimize your code to use less CPU time or request a higher limit from the system administrator. You can also consider submitting jobs without associating them if the association limits are restrictive.',
+            'AssocMaxCpuLimit': 'The job exceeded the maximum CPU time limit for an association. Associations allow you to set limits on the total CPU time that jobs in the association can use. If the total CPU time used by all jobs in the association exceeds this limit, the job will be terminated. To resolve this, you can either optimize your code to use less CPU time or request a higher limit from the system administrator. You can also consider submitting jobs without associating them if the association limits are restrictive.',
+            'AssocMaxNodeLimit': 'The job exceeded the maximum node limit for an association. Associations allow you to set limits on the number of nodes that jobs can use. If your job exceeds this limit, it will be terminated. To resolve this, you can either reduce the number of nodes requested in your job or request a higher limit from the system administrator. You can also consider submitting jobs without associating them if the association limits are restrictive.',
+            'AssocMaxWallDurationPerJobLimit': 'The job exceeded the maximum wall clock time limit per job for an association. Associations allow you to set limits on the wall clock time that jobs can use. If your job exceeds this limit, it will be terminated. To resolve this, you can either optimize your code to complete within the time limit or request a higher limit from the system administrator. You can also consider submitting jobs without associating them if the association limits are restrictive.',
+            'AssocGrpCPUMinutesLimit': 'The job exceeded the maximum CPU time limit for an association group.',
+            'AssocGrpCPURunMinutesLimit': 'The job exceeded the maximum running CPU time limit for an association group.',
+            'AssocGrpJobsLimit': 'The job exceeded the maximum number of jobs permitted for an association group.',
+            'AssocGrpNodeLimit': 'The job exceeded the maximum node limit for an association group.',
+            'AssocGrpSubmitJobsLimit': 'The job exceeded the maximum number of jobs permitted for an association group.',
+            'AssocGrpWallLimit': 'The job exceeded the maximum wall clock time limit for an association group.',
+            'QOSMaxJobsPerUserLimit': 'The job exceeded the maximum number of jobs permitted per user for a QOS. If you are using a QOS (Quality of Service) to submit your job, there may be limits on the number of jobs you can submit. If you exceed this limit, the job will be terminated. To resolve this, you can either reduce the number of jobs you submit or request a higher limit from the system administrator.',
+            'QOSMaxCpuPerJobLimit': 'The job exceeded the maximum CPU time limit per job for a QOS. If you are using a QOS (Quality of Service) to submit your job, there may be limits on the CPU time that each job can use. If your job exceeds this limit, it will be terminated. To resolve this, you can either optimize your code to use less CPU time or request a higher limit from the system administrator.',
+            'QOSMaxCpuMinutesPerJobLimit': 'The job exceeded the maximum CPU time limit per job for a QOS. If you are using a QOS (Quality of Service) to submit your job, there may be limits on the CPU time that each job can use. If your job exceeds this limit, it will be terminated. To resolve this, you can either optimize your code to use less CPU time or request a higher limit from the system administrator.',
+            'QOSMaxNodePerJobLimit': 'The job exceeded the maximum node limit per job for a QOS. If you are using a QOS (Quality of Service) to submit your job, there may be limits on the number of nodes that each job can use. If your job exceeds this limit, it will be terminated. To resolve this, you can either reduce the number of nodes requested in your job or request a higher limit from the system administrator.',
+            'QOSMaxWallDurationPerJobLimit': 'The job exceeded the maximum wall clock time limit per job for a QOS. If you are using a QOS (Quality of Service) to submit your job, there may be limits on the wall clock time that each job can use. If your job exceeds this limit, it will be terminated. To resolve this, you can either optimize your code to complete within the time limit or request a higher limit from the system administrator.',
+            'MaxCpuPerAccount': 'The job exceeded the maximum CPU time limit per account. If you are using a shared account to submit your job, there may be limits on the CPU time that each job can use. If your job exceeds this limit, it will be terminated. To resolve this, you can either optimize your code to use less CPU time or request a higher limit from the system administrator.',
+            'MaxJobsPerAccount': 'The job exceeded the maximum number of jobs permitted per account. If you are using a shared account to submit your job, there may be limits on the number of jobs you can submit. If you exceed this limit, the job will be terminated. To resolve this, you can either reduce the number of jobs you submit or request a higher limit from the system administrator.',
+            'MaxNodePerAccount': 'The job exceeded the maximum node limit per account. If you are using a shared account to submit your job, there may be limits on the number of nodes that each job can use. If your job exceeds this limit, it will be terminated. To resolve this, you can either reduce the number of nodes requested in your job or request a higher limit from the system administrator.',
+            'MaxCpuPerUser': 'The job exceeded the maximum CPU time limit per user. If you are submitting jobs under your user account, there may be limits on the CPU time that each job can use. If your job exceeds this limit, it will be terminated. To resolve this, you can either optimize your code to use less CPU time or request a higher limit from the system administrator.',
+            'MaxJobsPerUser': 'The job exceeded the maximum number of jobs permitted per user. If you are submitting jobs under your user account, there may be limits on the number of jobs you can submit. If you exceed this limit, the job will be terminated. To resolve this, you can either reduce the number of jobs you submit or request a higher limit from the system administrator.',
+            'MaxNodePerUser': 'The job exceeded the maximum node limit per user. If you are submitting jobs under your user account, there may be limits on the number of nodes that each job can use. If your job exceeds this limit, it will be terminated. To resolve this, you can either reduce the number of nodes requested in your job or request a higher limit from the system administrator.',
+            'MaxSubmitJobsPerUser': 'The job exceeded the maximum number of jobs that can be submitted by a user. If you are submitting jobs under your user account, there may be limits on the number of jobs you can submit. If you exceed this limit, the job will be terminated. To resolve this, you can either reduce the number of jobs you submit or request a higher limit from the system administrator.',
+            'BatchHostFail': 'The batch host for the job failed. This could be due to hardware issues, network problems, or other system failures. If you encounter this issue, it is recommended to report it to the system administrator for further investigation. In the meantime, you can try resubmitting your job to see if it runs successfully on a different batch host.',
+            'NodeFailure': 'The job terminated due to failure of one or more allocated nodes. This could be due to hardware issues, network problems, or other system failures. If you encounter this issue, it is recommended to report it to the system administrator for further investigation. In the meantime, you can try resubmitting your job to see if it runs successfully on different nodes.',
+            'InvalidAccount': 'The job specified an invalid account. Check the account name and resubmit the job with a valid account.',
+            'InvalidQOS': 'The job specified an invalid QOS. Check the QOS name and resubmit the job with a valid QOS.',
+            'QOSUsageThreshold': 'The job exceeded the usage threshold for the specified QOS. Check the QOS usage limits and resubmit the job within the allowed limits.',
+            'QOSResourceLimit': 'The job exceeded a resource limit associated with the specified QOS. Check the QOS resource limits and resubmit the job within the allowed limits.',
+            'BadConstraints': 'The job constraints could not be satisfied. Check the job constraints and resubmit the job with valid constraints.',
+            'DeadlineReached': 'The job reached its deadline. Check the job deadline and resubmit the job with a new deadline if needed.',
+            'PartitionNodeLimit': 'The job exceeded the node limit for its partition. Check the partition node limits and resubmit the job within the allowed limits.',
+            'PartitionTimeLimit': 'The job exceeded the time limit for its partition. Check the partition time limits and resubmit the job within the allowed limits.',
+            'ReqNodeNotAvail': 'The job requested a node that is not available. Check the node availability and resubmit the job with valid node requests.',
+            'QOSJobLimit': 'The job exceeded the maximum number of jobs permitted for the specified QOS. Check the QOS job limits and resubmit the job within the allowed limits.',
+            'PartitionConfig': 'The job\'s configuration is not allowed by the partition. Check the partition configuration and resubmit the job with valid settings.',
+            'PartitionDown': 'The job\'s partition is currently not available. Check the partition status and resubmit the job when the partition is available.',
+            'NonZeroExitCode': 'The job\'s executable returned a non-zero exit code. Check the job output and logs for errors and resubmit the job after fixing the issues.',
+            'InactiveLimit': 'The job reached the inactive limit. Check the job status and resubmit the job if needed.',
+            'InvalidDependency': 'The job specified an invalid dependency. Check the job dependencies (another job that is not finished?) and resubmit the job with valid dependencies.',
+            'JobHeldAdmin': 'The job was held by a system administrator. Contact the system administrator for further information.',
+            'JobHeldUser': 'The job was held by the user. Check the job status and release the job.',
+            'LicenseJobLimit': 'The job reached the limit of licenses. Check the license availability and resubmit the job when licenses are available.',
+            'AssocMaxJobsSubmitLimit': 'The job exceeded the maximum number of jobs that can be submitted for an association. Check the association limits and resubmit the job within the allowed limits.',
+        }
+        return reason_explanations.get(reason_code, f'No details for code {reason_code} available.')
+
+if __name__ == '__main__':
+    TSQueue().run()
