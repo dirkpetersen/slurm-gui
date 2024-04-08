@@ -7,7 +7,11 @@
 # > textual run --dev ~/gh/slurm-gui/bin/tsqueue
 # This will show all print statements in the console
 
-import os, re, subprocess as sp, asyncio
+import sys, os, re, subprocess as sp, asyncio
+if sys.version_info < (3, 8):
+    print("Error: This script requires Python 3.8 or higher.")
+    print(f"You are using Python {sys.version}")
+    sys.exit(1)
 from typing import List, Dict
 from textual import events
 from textual.app import App, ComposeResult

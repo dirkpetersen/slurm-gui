@@ -2,6 +2,11 @@
 
 **GUI/TUI frontends to squeue, sbatch and srun using the fabulous textual TUI framework**
 
+![PyPI](https://img.shields.io/pypi/v/slurm-gui)
+![PyPI - Python Version](https://img.shields.io/pypi/pyversions/slurm-gui)
+![PyPI - License](https://img.shields.io/pypi/l/slurm-gui)
+
+
 Simply run `tsqueue` on a node where slurm is installed to get a list of slurm jobs (tsbatch and tsrun are coming...)
 
 ![image](https://github.com/dirkpetersen/slurm-gui/assets/1427719/d56d9b88-0ff4-49cf-a563-b21d4aa2d9e0)
