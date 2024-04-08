@@ -24,12 +24,16 @@ with open("README.md", "r", encoding="utf-8") as fh:
 def read_requirements():
     print('os.listdir():', os.listdir())
     for root, dirs, files in os.walk("."):
-        if "requires.txt" in files:
+        filepath = ''
+        if "requirements.txt" in files:
+            file_path = os.path.join(root, "requirements.txt")
+        elif "requires.txt" in files:
             file_path = os.path.join(root, "requires.txt")
-            print('requirements.txt:', file_path)
+        print('requirements.txt:', file_path)
+        if file_path:
             with open(file_path, 'r') as file:
                 return file.read().splitlines()
-    return ['textual']
+    return []
 
 setuptools.setup(
     name=pkgname,
