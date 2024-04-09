@@ -69,7 +69,7 @@ setuptools.setup(
     install_requires=read_requirements(),
     entry_points={
         'console_scripts': [
-            'tsqueue = slurm-gui.tsqueue:main',
+            'tsqueue = slurm-gui.bin.tsqueue:main',
         ],
     },
     cmdclass={
