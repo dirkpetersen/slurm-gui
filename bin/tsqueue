@@ -12,14 +12,23 @@ if sys.version_info < (3, 8):
     print("Error: This script requires Python 3.8 or higher.")
     print(f"You are using Python {sys.version}")
     sys.exit(1)
-import os, re, subprocess as sp, asyncio, getpass
+import os, re, subprocess as sp, asyncio, getpass, shutil
 from typing import List, Dict, Tuple # Python 3.8 compatibility
+try:
+    import textual
+except:
+    print("Error: The 'textual' package is not installed. Please install it using 'python3 -m pip install textual'")
+    sys.exit(1)
 from textual import events
 from textual.app import App, ComposeResult
 from textual.widgets import DataTable, Button, Header, Footer, Label, ProgressBar, Static, Rule
 from textual.binding import Binding
 from textual.containers import Vertical, Horizontal, Center, Middle
 from textual.screen import ModalScreen
+
+if not shutil.which('squeue'):
+    print("Error: The 'squeue' command is not available. Please make sure Slurm is installed and the command is in your PATH.")
+    sys.exit(1)
 
 class TSQueue(App):
     BINDINGS = [

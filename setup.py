@@ -4,7 +4,6 @@ pkgname = 'slurm-gui'
 appdesc = "GUI/TUI frontends to squeue, sbatch and srun using the fabulous textual TUI framework"
 gitrepos = 'dirkpetersen/slurm-gui'
 pyreq = '>=3.8'
-myscripts = ['bin/tsqueue']
 
 def get_version():
     github_ref = os.getenv("GITHUB_REF")
@@ -22,18 +21,25 @@ with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 def read_requirements():
-    print('os.listdir():', os.listdir())
     for root, dirs, files in os.walk("."):
         file_path = ''
         if "requirements.txt" in files:
             file_path = os.path.join(root, "requirements.txt")
         elif "requires.txt" in files:
-            file_path = os.path.join(root, "requires.txt")        
+            file_path = os.path.join(root, "requires.txt")
         if file_path:
-            print('requirements.txt:', file_path)
             with open(file_path, 'r') as file:
                 return file.read().splitlines()
     return []
+
+# Create a custom script wrapper
+def create_script_wrapper(script_name):
+    wrapper_content = f"""#!/usr/bin/env python3
+import os, sys
+script_path = os.path.join(os.path.dirname(__file__), '{script_name}')
+os.execv(sys.executable, [sys.executable, script_path] + sys.argv[1:])
+"""
+    return wrapper_content
 
 setuptools.setup(
     name=pkgname,
@@ -46,11 +52,30 @@ setuptools.setup(
     url=f"https://github.com/{gitrepos}",
     packages=setuptools.find_packages(),
     classifiers=[
-        "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
-        "Operating System :: OS Independent",
+        "Development Status :: 4 - Beta",
+        "Environment :: Console",
+        "Intended Audience :: HPC Users",
+        "Topic :: System :: Distributed Computing"
+        "Topic :: Utilities"        
+        "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3.13", 
     ],
     python_requires=pyreq,
     install_requires=read_requirements(),
-    scripts=myscripts,
+    entry_points={
+        'console_scripts': [
+            'tsqueue = slurm-gui.tsqueue:main',
+        ],
+    },
+    cmdclass={
+        'install_scripts': lambda self: [
+            (script, create_script_wrapper(script))
+            for script in self.distribution.entry_points['console_scripts']
+        ]
+    }
 )
