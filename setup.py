@@ -4,6 +4,7 @@ pkgname = 'slurm-gui'
 appdesc = "GUI/TUI frontends to squeue, sbatch and srun using the fabulous textual TUI framework"
 gitrepos = 'dirkpetersen/slurm-gui'
 pyreq = '>=3.8'
+myscripts = ['bin/tsqueue']
 
 def get_version():
     github_ref = os.getenv("GITHUB_REF")
@@ -21,23 +22,18 @@ with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 def read_requirements():
+    print('os.listdir():', os.listdir())
     for root, dirs, files in os.walk("."):
         file_path = ''
         if "requirements.txt" in files:
             file_path = os.path.join(root, "requirements.txt")
         elif "requires.txt" in files:
-            file_path = os.path.join(root, "requires.txt")
+            file_path = os.path.join(root, "requires.txt")        
         if file_path:
+            print('requirements.txt:', file_path)
             with open(file_path, 'r') as file:
                 return file.read().splitlines()
     return []
-
-def create_script_wrapper(script_path):
-    wrapper_content = f"""#!/usr/bin/env python3
-import os, sys
-os.execv(sys.executable, [sys.executable, '{script_path}'] + sys.argv[1:])
-"""
-    return wrapper_content
 
 setuptools.setup(
     name=pkgname,
@@ -65,10 +61,5 @@ setuptools.setup(
     ],
     python_requires=pyreq,
     install_requires=read_requirements(),
-    cmdclass={
-        'install_scripts': lambda self: [
-            (os.path.join('bin', 'tsqueue'), create_script_wrapper(os.path.join('bin', 'tsqueue')))
-        ],
-        'bdist_wheel': 'setuptools.command.sdist:sdist'
-    }
+    scripts=myscripts,
 )
