@@ -49,7 +49,6 @@ setuptools.setup(
         "License :: OSI Approved :: MIT License",
         "Development Status :: 4 - Beta",
         "Environment :: Console",
-        "Intended Audience :: HPC Users",
         "Topic :: System :: Distributed Computing",
         "Topic :: Utilities",
         "Programming Language :: Python :: 3.8",
