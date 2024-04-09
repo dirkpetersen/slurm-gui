@@ -32,12 +32,10 @@ def read_requirements():
                 return file.read().splitlines()
     return []
 
-# Create a custom script wrapper
-def create_script_wrapper(script_name):
+def create_script_wrapper(script_path):
     wrapper_content = f"""#!/usr/bin/env python3
 import os, sys
-script_path = os.path.join(os.path.dirname(__file__), '{script_name}')
-os.execv(sys.executable, [sys.executable, script_path] + sys.argv[1:])
+os.execv(sys.executable, [sys.executable, '{script_path}'] + sys.argv[1:])
 """
     return wrapper_content
 
@@ -56,26 +54,20 @@ setuptools.setup(
         "Development Status :: 4 - Beta",
         "Environment :: Console",
         "Intended Audience :: HPC Users",
-        "Topic :: System :: Distributed Computing"
-        "Topic :: Utilities"        
+        "Topic :: System :: Distributed Computing",
+        "Topic :: Utilities",
         "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
-        "Programming Language :: Python :: 3.13", 
+        "Programming Language :: Python :: 3.13",
     ],
     python_requires=pyreq,
     install_requires=read_requirements(),
-    entry_points={
-        'console_scripts': [
-            'tsqueue = slurm-gui.bin.tsqueue:main',
-        ],
-    },
     cmdclass={
         'install_scripts': lambda self: [
-            (script, create_script_wrapper(script))
-            for script in self.distribution.entry_points['console_scripts']
+            (os.path.join('bin', 'tsqueue'), create_script_wrapper(os.path.join('bin', 'tsqueue')))
         ]
     }
 )
