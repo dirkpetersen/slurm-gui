@@ -39,6 +39,13 @@ os.execv(sys.executable, [sys.executable, '{script_path}'] + sys.argv[1:])
 """
     return wrapper_content
 
+class CustomBuildWheel(setuptools.command.bdist_wheel.bdist_wheel):
+    """Disable wheel build"""
+    def get_finalized_command(self, command):
+        if command == 'bdist_wheel':
+            return self
+        return super().get_finalized_command(command)
+
 setuptools.setup(
     name=pkgname,
     version=get_version(),
@@ -69,6 +76,7 @@ setuptools.setup(
     cmdclass={
         'install_scripts': lambda self: [
             (os.path.join('bin', 'tsqueue'), create_script_wrapper(os.path.join('bin', 'tsqueue')))
-        ]
+        ],
+        'bdist_wheel': CustomBuildWheel,
     }
 )
