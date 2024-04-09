@@ -65,13 +65,10 @@ setuptools.setup(
     ],
     python_requires=pyreq,
     install_requires=read_requirements(),
-    bdist_wheel=None,
     cmdclass={
         'install_scripts': lambda self: [
             (os.path.join('bin', 'tsqueue'), create_script_wrapper(os.path.join('bin', 'tsqueue')))
         ],
-    },
-    cmdclass={
         'bdist_wheel': 'setuptools.command.sdist:sdist'
-    }       
+    }
 )
