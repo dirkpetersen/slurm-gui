@@ -7,17 +7,18 @@
 # > textual run --dev ~/gh/slurm-gui/bin/tsqueue
 # This will show all print statements in the console
 
-import sys, os, re, subprocess as sp, asyncio
+import sys
 if sys.version_info < (3, 8):
     print("Error: This script requires Python 3.8 or higher.")
     print(f"You are using Python {sys.version}")
     sys.exit(1)
-from typing import List, Dict, Tuple
+import os, re, subprocess as sp, asyncio, getpass
+from typing import List, Dict, Tuple # Python 3.8 compatibility
 from textual import events
 from textual.app import App, ComposeResult
 from textual.widgets import DataTable, Button, Header, Footer, Label, ProgressBar, Static, Rule
 from textual.binding import Binding
-from textual.containers import Vertical, Horizontal
+from textual.containers import Vertical, Horizontal, Center, Middle
 from textual.screen import ModalScreen
 
 class TSQueue(App):
@@ -26,33 +27,69 @@ class TSQueue(App):
     ]
 
     def compose(self) -> ComposeResult:
-        table = DataTable()
-        table.focus()
-        table.zebra_stripes = True
-        table.cursor_type = "row"
-        table.styles.max_height = "99vh"
-        yield table
+        with Center():
+            self.data_table = DataTable()
+            self.data_table.focus()
+            self.data_table.zebra_stripes = True
+            self.data_table.cursor_type = "row"
+            self.data_table.styles.max_height = "97vh"
+            self.data_table.styles.width = "99%"
+            yield self.data_table
+            self.progress_bar = ProgressBar(
+                total=100,
+                show_bar=True,
+                show_percentage=True,
+                show_eta=False
+            )
+            yield self.progress_bar
+        yield Footer()
+        self.progress_bar.advance(20)
 
     def on_mount(self) -> None:
-        self.data_table = self.query_one(DataTable)
-        self.update_data()
+        asyncio.create_task(self.update_data())
 
-    def update_data(self) -> None:
-        columns, data = self.get_squeue_data()
+    async def update_data(self) -> None:
+        columns, data = await self.get_squeue_data()
         #print('*** columns:', columns)
-        #print('*** data:', data)
+        #print('*** data:', data)     
+        self.progress_bar.advance(20)
         self.data_table.add_columns(*columns)
+        self.progress_bar.advance(30)
         self.data_table.add_rows(data)
+        self.progress_bar.total = 100              
+        self.data_table.focus
+        self.progress_bar.remove()
 
-    def get_squeue_data(self) -> Tuple[List[str], List[List[str]]]:
+    async def get_squeue_data(self) -> Tuple[List[str], List[List[str]]]:
         squeue_format = os.getenv('SQUEUE_FORMAT', '%.18i %.4P %.12j %.8u %.2t %.10M %.10L %.3D %.3C %.9b %.4m %R')
+        squeue_format = re.sub(r'\s+', '|', squeue_format) # replace multiple spaces with a single pipe
         cmd = f'squeue --format="{squeue_format}"'
-        output = sp.check_output(cmd, shell=True, text=True)
+        process = await asyncio.create_subprocess_shell(cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        stdout, stderr = await process.communicate()        
+        output = stdout.decode().strip()
         lines = output.strip().split('\n')
-        columns = re.split(r'\s+', lines[0].strip())
-        data = [re.split(r'\s+', line.strip()) for line in lines[1:]]
+        columns = [col.strip() for col in lines[0].split('|')]
+        data = [line.split('|') for line in lines[1:]] 
+     
+        # Get the current Linux user
+        current_user = getpass.getuser()
+
+        # Move all lines where the USER column matches the current user to the top
+        user_lines = []
+        other_lines = []
+        for line in data:
+            if line[columns.index('USER')] == current_user.strip():  # strip whitespace from user name
+                user_lines.append(line)
+            else:
+                other_lines.append(line)
+        data = user_lines + other_lines
         return columns, data
-    
+
+    async def delete_row_by_job_id(self, job_id: str) -> None:
+        if self.selected_row_key is not None:
+            self.data_table.remove_row(self.selected_row_key)
+            self.selected_row_key = None    
+
     async def get_job_details(self, job_id: str) -> Dict[str, List[str]]:
 
         user = os.getlogin()  # Get the current username
@@ -91,11 +128,12 @@ class TSQueue(App):
             sorted_details[key] = [value[i] for value in values]
         
         #print("Job Details:")
-        # print(sorted_details)
+        #print(sorted_details)
         return sorted_details
 
     async def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-        job_id = self.data_table.get_row(event.row_key)[0]
+        self.selected_row_key = event.row_key    
+        job_id = self.data_table.get_row(event.row_key)[0].strip()
         details = await self.get_job_details(job_id)
         screen = JobDetailsScreen(job_id, details)
         await self.push_screen(screen)
@@ -106,6 +144,8 @@ class TSQueue(App):
 class JobDetailsScreen(ModalScreen):
     BINDINGS = [
         ("q", "request_quit", "Quit"),
+        ("c", "request_cancel", "Cancel")
+
     ]    
     DEFAULT_CSS = """
     JobDetailsScreen {
@@ -151,10 +191,8 @@ class JobDetailsScreen(ModalScreen):
             # Scrollable DataTable for details
             with Horizontal():
                 yield Button("(q)uit", id="close", variant="primary")
-
-                if job_state.lower() == 'running':
-                    yield Button("Cancel Job", id="cancel_job", variant="error")
-
+                #if job_state.lower() == 'running': # Only show cancel button if job is running
+                yield Button("(c)ancel job", id="cancel_job", variant="error")
                 self.status_label = Label(f"  Details for job {self.job_id}", id="title")
                 if reason != 'None':
                     self.status_label.update(f"Job {self.job_id} is pending, reason: {self.explain_reason_code(reason)}")
@@ -169,7 +207,7 @@ class JobDetailsScreen(ModalScreen):
             details_table.add_column("Value")
             for key, values in self.details.items():
                 for value in values:
-                    if value not in [None, '', 'Unknown', '(null)', 'N/A', '*', 'None', '0', '00:00:00']:
+                    if value not in [None, '', 'Unknown', '(null)', 'N/A', 'n/a',  '*', 'None', '0', '00:00:00']:
                         details_table.add_row(key, value)
             yield details_table
 
@@ -185,6 +223,7 @@ class JobDetailsScreen(ModalScreen):
         stdout, stderr = await process.communicate()
 
         if process.returncode == 0:
+            await self.app.delete_row_by_job_id(self.job_id)            
             self.dismiss()
         else:
             error_message = stderr.decode().strip()
@@ -194,6 +233,9 @@ class JobDetailsScreen(ModalScreen):
 
     def action_request_quit(self) -> None:
         self.dismiss()
+
+    def action_request_cancel(self) -> None:
+        asyncio.create_task(self.cancel_job())
 
     def explain_reason_code(self, reason_code: str) -> str:
         reason_explanations = {
