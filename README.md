@@ -24,3 +24,8 @@ if a job is running, it will offer you to cancel it plus an error message for jo
 
 ![image](https://github.com/dirkpetersen/slurm-gui/assets/1427719/8c27c8c0-8a00-47e9-be9a-1346ff2cbab5)
 
+and if you have selected on one of your own jobs you can scoll down and get lots of details, for example about the maximum memory consumption (MaxRSS) of your job 
+
+![image](https://github.com/dirkpetersen/slurm-gui/assets/1427719/8037afd5-3a18-4adb-9f39-1578ff619ec8)
+
+
